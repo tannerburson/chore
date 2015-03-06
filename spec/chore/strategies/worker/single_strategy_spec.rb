@@ -1,6 +1,6 @@
 require 'spec_helper'
 
-describe Chore::Strategy::SingleWorkerStrategy do
+describe Chore::Strategy::Working::SingleStrategy do
   let(:manager) { mock('Manager') }
   subject       { described_class.new(manager) }
 

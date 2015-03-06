@@ -1,10 +1,10 @@
 require 'spec_helper'
 require 'securerandom'
 
-describe Chore::Strategy::ForkedWorkerStrategy do
+describe Chore::Strategy::Working::ForkingStrategy do
   let(:manager) { double('manager') }
   let(:forker) do
-    strategy = Chore::Strategy::ForkedWorkerStrategy.new(manager)
+    strategy = Chore::Strategy::Working::ForkingStrategy.new(manager)
     strategy.stub(:exit!)
     strategy
   end
@@ -21,7 +21,7 @@ describe Chore::Strategy::ForkedWorkerStrategy do
   context "signal handling" do
     it 'should trap signals from terminating children and reap them' do
       Chore::Signal.should_receive(:trap).with('CHLD').and_yield
-      Chore::Strategy::ForkedWorkerStrategy.any_instance.should_receive(:reap_terminated_workers!)
+      Chore::Strategy::Working::ForkingStrategy.any_instance.should_receive(:reap_terminated_workers!)
       forker
     end
   end

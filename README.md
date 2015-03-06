@@ -26,7 +26,7 @@ Make sure that `--require` points to the main entry point for your app. If integ
 Other options include:
 
     --concurrency 16 # number of concurrent worker processes, if using forked worker strategy
-    --worker-strategy Chore::Strategy::ForkedWorkerStrategy # which worker strategy class to use
+    --worker-strategy Chore::Strategy::Working::ForkingStrategy # which worker strategy class to use
     --consumer Chore::Queues::SQS::Consumer # which consumer class to use Options are SQS::Consumer and Filesystem::Consumer. Filesystem is recommended for local and testing purposes only.
     --consumer-strategy Chore::Queues::Strategies::Consumer::ThreadedConsumerStrategy # which consuming strategy to use. Options are SingleConsumerStrategy and ThreadedConsumerStrategy. Threaded is recommended for better tuning your consuming profile
     --threads-per-queue 4 # number of threads per queue for consuming from a given queue.
@@ -66,7 +66,7 @@ An example of how to configure chore via and initializer:
 ```ruby
 Chore.configure do |c|
   c.concurrency = 16
-  c.worker_strategy = Chore::Strategy::ForkedWorkerStrategy
+  c.worker_strategy = Chore::Strategy::Working::ForkingStrategy
   c.max_attempts = 100
   ...
   c.batch_size = 50

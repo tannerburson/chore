@@ -28,10 +28,10 @@ module Chore #:nodoc:
     :require               => "./",
     :num_workers           => 4,
     :threads_per_queue     => 1,
-    :worker_strategy       => Strategy::ForkedWorkerStrategy,
+    :worker_strategy       => Strategy::Working::ForkingStrategy,
     :consumer              => Queues::SQS::Consumer,
     :fetcher               => Fetcher,
-    :consumer_strategy     => Strategy::ThreadedConsumerStrategy,
+    :consumer_strategy     => Strategy::Fetching::ThreadedFetchingStrategy,
     :batch_size            => 50,
     :log_level             => Logger::WARN,
     :log_path              => STDOUT,
@@ -179,7 +179,7 @@ module Chore #:nodoc:
   # This is used by the command line parsing code to setup Chore.
   # If a +block+ is given, <tt>configure</tt> will yield the config object, so you can set options directly.
   # === Examples
-  #   Chore.configure({:worker_strategy => Chore::ForkedWorkerStrategy})
+  #   Chore.configure({:worker_strategy => Chore::Strategy::Working::ForkingStrategy})
   #
   #   Chore.configure do |c|
   #     c.consumer = Chore::Queues::SQS::Consumer

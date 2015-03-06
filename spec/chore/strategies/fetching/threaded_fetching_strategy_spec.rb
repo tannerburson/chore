@@ -20,11 +20,11 @@ class NoQueueConsumer < Chore::Consumer
   end
 end
 
-describe Chore::Strategy::ThreadedConsumerStrategy do
+describe Chore::Strategy::Fetching::ThreadedFetchingStrategy do
   let(:fetcher) { double("fetcher") }
   let(:manager) { double("manager") }
   let(:consumer) { TestConsumer }
-  let(:strategy) { Chore::Strategy::ThreadedConsumerStrategy.new(fetcher) }
+  let(:strategy) { Chore::Strategy::Fetching::ThreadedFetchingStrategy.new(fetcher) }
 
   before(:each) do
     fetcher.stub(:consumers) { [consumer] }
@@ -84,7 +84,7 @@ describe Chore::Strategy::ThreadedConsumerStrategy do
   describe "non-existent queue" do
     let(:bad_consumer) { NoQueueConsumer }
     let(:fetcher) { double("fetcher") }
-    let(:strategy) { Chore::Strategy::ThreadedConsumerStrategy.new(fetcher) }
+    let(:strategy) { Chore::Strategy::Fetching::ThreadedFetchingStrategy.new(fetcher) }
     let(:batch_size) { 2 }
 
     before do

@@ -131,10 +131,10 @@ describe Chore::CLI do
     let(:config) { cli.parse(command); Chore.config }
 
     context "--consumer-strategy" do
-      let(:command) { ["--consumer-strategy=Chore::Strategy::SingleConsumerStrategy"] }
+      let(:command) { ["--consumer-strategy=Chore::Strategy::Working::SingleStrategy"] }
 
       it "should set the consumer class" do
-        config.consumer_strategy.should == Chore::Strategy::SingleConsumerStrategy
+        config.consumer_strategy.should == Chore::Strategy::Working::SingleStrategy
       end
     end
 

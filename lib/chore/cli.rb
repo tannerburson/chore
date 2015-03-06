@@ -118,7 +118,7 @@ module Chore #:nodoc:
 
       register_option 'max_attempts', '--max-attempts NUM', Integer, 'Number of times to attempt failed jobs'
 
-      register_option 'worker_strategy', '--worker-strategy CLASS_NAME', 'Name of a class to use as the worker strategy (default: ForkedWorkerStrategy' do |arg|
+      register_option 'worker_strategy', '--worker-strategy CLASS_NAME', 'Name of a class to use as the worker strategy (default: ForkingStrategy' do |arg|
         options[:worker_strategy] = constantize(arg)
       end
 
@@ -126,7 +126,7 @@ module Chore #:nodoc:
         options[:consumer] = constantize(arg)
       end
 
-      register_option 'consumer_strategy', '--consumer-strategy CLASS_NAME', 'Name of a class to use as the consumer strategy (default: Chore::Strategy::ThreadedConsumerStrategy' do |arg|
+      register_option 'consumer_strategy', '--consumer-strategy CLASS_NAME', 'Name of a class to use as the consumer strategy (default: Chore::Strategy::Fetching::ThreadedConsumerStrategy' do |arg|
         options[:consumer_strategy] = constantize(arg)
       end
 
