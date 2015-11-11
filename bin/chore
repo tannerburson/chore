@@ -24,7 +24,7 @@ end
 begin
   # Pre-load any Bundler dependencies now, so that the CLI parser has them loaded
   # prior to intrpretting the command line args for things like consumers/producers
-  Bundler.require if defined?(Bundler)
+  # Bundler.require if defined?(Bundler) have to disable this right now, causes weird failures from unrelated plugins
   cli = Chore::CLI.instance
   cli.run!(ARGV)
 rescue => e
