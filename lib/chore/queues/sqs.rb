@@ -26,7 +26,7 @@ module Chore
           Chore.logger.info "Chore Creating Queue: #{queue_name}"
           begin
             sqs_queues.create(queue_name)
-          rescue AWS::SQS::Errors::QueueAlreadyExists
+          rescue Aws::SQS::Errors::QueueAlreadyExists
             Chore.logger.info "exists with different config"
           end
         end
@@ -37,8 +37,8 @@ module Chore
       # This is meant to be invoked from a rake task, and not directly.
       def self.delete_queues!
         raise 'You must have atleast one Chore Job configured and loaded before attempting to create queues' unless Chore.prefixed_queue_names.length > 0
-        #This will raise an exception if AWS has not been configured by the project making use of Chore
-        sqs_queues = AWS::SQS.new.queues
+        #This will raise an exception if Aws has not been configured by the project making use of Chore
+        sqs_queues = Aws::SQS.new.queues
         Chore.prefixed_queue_names.each do |queue_name|
           begin
             Chore.logger.info "Chore Deleting Queue: #{queue_name}"

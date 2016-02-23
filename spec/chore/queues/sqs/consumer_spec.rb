@@ -10,11 +10,11 @@ describe Chore::Queues::SQS::Consumer do
   let(:message) { TestMessage.new("handle",queue, "message body", 1) }
   let(:message_data) {{:id=>message.id, :queue=>message.queue.url, :visibility_timeout=>message.queue.visibility_timeout}}
   let(:pool) { double("pool") }
-  let(:sqs) { double('AWS::SQS') }
+  let(:sqs) { double('Aws::SQS') }
   let(:backoff_func) { nil }
 
   before do
-    allow(AWS::SQS).to receive(:new).and_return(sqs)
+    allow(Aws::SQS).to receive(:new).and_return(sqs)
     allow(sqs).to receive(:queues) { queues }
 
     allow(queues).to receive(:url_for) { queue_url }
@@ -32,7 +32,7 @@ describe Chore::Queues::SQS::Consumer do
       allow(Chore.config).to receive(:aws_access_key).and_return('key')
       allow(Chore.config).to receive(:aws_secret_key).and_return('secret')
 
-      expect(AWS::SQS).to receive(:new).with(
+      expect(Aws::SQS).to receive(:new).with(
         :access_key_id => 'key',
         :secret_access_key => 'secret'
       ).and_return(sqs)
@@ -42,7 +42,7 @@ describe Chore::Queues::SQS::Consumer do
     it 'should not configure sqs multiple times' do
       allow(consumer).to receive(:running?).and_return(true, true, false)
 
-      expect(AWS::SQS).to receive(:new).once.and_return(sqs)
+      expect(Aws::SQS).to receive(:new).once.and_return(sqs)
       consumer.consume
     end
 
@@ -117,7 +117,7 @@ describe Chore::Queues::SQS::Consumer do
 
   describe '#reset_connection!' do
     it 'should reset the connection after a call to reset_connection!' do
-      expect(AWS::Core::Http::ConnectionPool).to receive(:pools).and_return([pool])
+      expect(Seahorse::Client::NetHttp::ConnectionPool).to receive(:pools).and_return([pool])
       expect(pool).to receive(:empty!)
       Chore::Queues::SQS::Consumer.reset_connection!
       consumer.send(:queue)
@@ -136,7 +136,7 @@ describe Chore::Queues::SQS::Consumer do
       consumer.consume
 
       Chore::Queues::SQS::Consumer.reset_connection!
-      allow(AWS::SQS).to receive(:new).and_return(sqs)
+      allow(Aws::SQS).to receive(:new).and_return(sqs)
 
       expect(consumer).to receive(:running?).and_return(true, false)
       consumer.consume
@@ -144,23 +144,23 @@ describe Chore::Queues::SQS::Consumer do
   end
 
   describe 'aws logging' do
-    it 'should not set AWS logging if Chore log level is info' do
+    it 'should not set Aws logging if Chore log level is info' do
       allow(Chore.config).to receive(:log_level).and_return(Logger::INFO)
 
       allow(consumer).to receive(:running?).and_return(true, false)
       allow(queue).to receive(:receive_messages).and_return(message)
 
-      expect(AWS::SQS).to receive(:new).with(hash_not_including(:logger => Chore.logger, :log_level => :debug))
+      expect(Aws::SQS).to receive(:new).with(hash_not_including(:logger => Chore.logger, :log_level => :info))
       consumer.consume
     end
 
-    it 'should set the AWS logging if Chore log level is debug' do
+    it 'should set the Aws logging if Chore log level is debug' do
       allow(Chore.config).to receive(:log_level).and_return(Logger::DEBUG)
 
       allow(consumer).to receive(:running?).and_return(true, false)
       allow(queue).to receive(:receive_messages).and_return(message)
 
-      expect(AWS::SQS).to receive(:new).with(hash_including(:logger => Chore.logger, :log_level => :debug))
+      expect(Aws::SQS).to receive(:new).with(hash_including(:logger => Chore.logger, :log_level => :info))
       consumer.consume
     end
   end

@@ -1,8 +1,7 @@
-require 'aws/sqs'
+require 'aws-sdk-core'
 require 'chore/duplicate_detector'
 
-AWS.eager_autoload! AWS::Core
-AWS.eager_autoload! AWS::SQS
+Aws.eager_autoload!(services: %w(SQS))
 
 module Chore
   module Queues
@@ -13,8 +12,8 @@ module Chore
         # Initialize the reset at on class load
         @@reset_at = Time.now
 
-        Chore::CLI.register_option 'aws_access_key', '--aws-access-key KEY', 'Valid AWS Access Key'
-        Chore::CLI.register_option 'aws_secret_key', '--aws-secret-key KEY', 'Valid AWS Secret Key'
+        Chore::CLI.register_option 'aws_access_key', '--aws-access-key KEY', 'Valid Aws Access Key'
+        Chore::CLI.register_option 'aws_secret_key', '--aws-secret-key KEY', 'Valid Aws Secret Key'
         Chore::CLI.register_option 'dedupe_servers', '--dedupe-servers SERVERS', 'List of mememcache compatible server(s) to use for storing SQS Message Dedupe cache'
         Chore::CLI.register_option 'queue_polling_size', '--queue_polling_size NUM', Integer, 'Amount of messages to grab on each request' do |arg|
           raise ArgumentError, "Cannot specify a queue polling size greater than 10" if arg > 10
@@ -35,7 +34,7 @@ module Chore
             begin
               messages = handle_messages(&handler)
               sleep (Chore.config.consumer_sleep_interval || 1) if messages.empty?
-            rescue AWS::SQS::Errors::NonExistentQueue => e
+            rescue Aws::SQS::Errors::NonExistentQueue => e
               Chore.logger.error "You specified a queue '#{queue_name}' that does not exist. You must create the queue before starting Chore. Shutting down..."
               raise Chore::TerribleMistake
             rescue => e
@@ -96,7 +95,7 @@ module Chore
         # re-initialized, as well as clear any cached results from prior calls
         def queue
           if !@sqs_last_connected || (@@reset_at && @@reset_at >= @sqs_last_connected)
-            AWS::Core::Http::ConnectionPool.pools.each do |p|
+            Seahorse::Client::NetHttp::ConnectionPool.pools.each do |p|
               p.empty!
             end
             @sqs = nil
@@ -118,8 +117,8 @@ module Chore
             :access_key_id => Chore.config.aws_access_key,
             :secret_access_key => Chore.config.aws_secret_key
           }
-          sqs_options.merge!(:logger => Chore.logger, :log_level => :debug) if Chore.config.log_level == Logger::DEBUG
-          @sqs ||= AWS::SQS.new(sqs_options)
+          sqs_options.merge!(:logger => Chore.logger, :log_level => :info) if Chore.config.log_level == Logger::DEBUG
+          @sqs ||= Aws::SQS.new(sqs_options)
         end
 
         def sqs_polling_amount

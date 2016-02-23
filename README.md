@@ -107,7 +107,7 @@ If your queues do not exist, you must create them before you run the application
 
 ```ruby
 require 'aws-sdk'
-sqs = AWS::SQS.new
+sqs = Aws::SQS.new
 sqs.queues.create("test_queue")
 ```
 

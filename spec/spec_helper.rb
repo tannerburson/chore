@@ -65,3 +65,5 @@ RSpec.configure do |config|
     FakePublisher.reset!
   end
 end
+
+RSpec::Expectations.configuration.warn_about_potential_false_positives = false

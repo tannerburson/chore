@@ -3,7 +3,7 @@ require 'chore/publisher'
 module Chore
   module Queues
     module SQS
-      
+
       # SQS Publisher, for writing messages to SQS from Chore
       class Publisher < Chore::Publisher
         @@reset_next = true
@@ -27,11 +27,13 @@ module Chore
 
         # Access to the configured SQS connection object
         def sqs
-          @sqs ||= AWS::SQS.new(
+          sqs_options = {
             :access_key_id => Chore.config.aws_access_key,
-            :secret_access_key => Chore.config.aws_secret_key,
-            :logger => Chore.logger,
-            :log_level => :debug)
+            :secret_access_key => Chore.config.aws_secret_key
+          }
+          sqs_options.merge!(:logger => Chore.logger, :log_level => :info) if Chore.config.log_level == Logger::DEBUG
+          @sqs ||= Aws::SQS.new(sqs_options)
+
         end
 
         # Retrieves the SQS queue with the given +name+. The method will cache the results to prevent round trips on subsequent calls
@@ -39,7 +41,7 @@ module Chore
         # as well as clear any cached results from prior calls
         def queue(name)
          if @@reset_next
-            AWS::Core::Http::ConnectionPool.pools.each do |p|
+            Seahorse::Client::NetHttp::ConnectionPool.pools.each do |p|
               p.empty!
             end
             @sqs = nil

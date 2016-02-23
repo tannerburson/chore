@@ -13,18 +13,16 @@ module Chore
     let(:pool) { double("pool") }
 
     before(:each) do
-      AWS::SQS.stub(:new).and_return(sqs)
+      Aws::SQS.stub(:new).and_return(sqs)
     end
 
     it 'should configure sqs' do
       Chore.config.stub(:aws_access_key).and_return('key')
       Chore.config.stub(:aws_secret_key).and_return('secret')
 
-      AWS::SQS.should_receive(:new).with(
+      Aws::SQS.should_receive(:new).with(
         :access_key_id => 'key',
-        :secret_access_key => 'secret',
-        :logger => Chore.logger,
-        :log_level => :debug
+        :secret_access_key => 'secret'
       )
       publisher.publish(queue_name,job)
     end
@@ -53,20 +51,20 @@ module Chore
 
     describe '#reset_connection!' do
       it 'should reset the connection after a call to reset_connection!' do
-        AWS::Core::Http::ConnectionPool.stub(:pools).and_return([pool])
+        Seahorse::Client::NetHttp::ConnectionPool.stub(:pools).and_return([pool])
         pool.should_receive(:empty!)
         Chore::Queues::SQS::Publisher.reset_connection!
         publisher.queue(queue_name)
       end
-  
+
       it 'should not reset the connection between calls' do
         sqs = publisher.queue(queue_name)
         sqs.should be publisher.queue(queue_name)
       end
-  
+
       it 'should reconfigure sqs' do
         Chore::Queues::SQS::Publisher.reset_connection!
-        AWS::SQS.should_receive(:new)
+        Aws::SQS.should_receive(:new)
         publisher.queue(queue_name)
       end
     end
