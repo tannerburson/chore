@@ -20,8 +20,8 @@ module Chore
           end
         end
 
-        #This will raise an exception if AWS has not been configured by the project making use of Chore
-        sqs_queues = AWS::SQS.new.queues
+        #This will raise an exception if Aws has not been configured by the project making use of Chore
+        sqs_queues = Aws::SQS.new.queues
         Chore.prefixed_queue_names.each do |queue_name|
           Chore.logger.info "Chore Creating Queue: #{queue_name}"
           begin
@@ -54,15 +54,15 @@ module Chore
 
       # Collect a list of queues that already exist
       def self.existing_queues
-        #This will raise an exception if AWS has not been configured by the project making use of Chore
-        sqs_queues = AWS::SQS.new.queues
+        #This will raise an exception if Aws has not been configured by the project making use of Chore
+        sqs_queues = Aws::SQS.new.queues
 
         Chore.prefixed_queue_names.select do |queue_name|
           # If the NonExistentQueue exception is raised we do not care about that queue name.
           begin
             sqs_queues.named(queue_name)
             true
-          rescue AWS::SQS::Errors::NonExistentQueue
+          rescue Aws::SQS::Errors::NonExistentQueue
             false
           end
         end
