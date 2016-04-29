@@ -12,8 +12,6 @@ module Chore
         # Initialize the reset at on class load
         @@reset_at = Time.now
 
-        Chore::CLI.register_option 'aws_access_key', '--aws-access-key KEY', 'Valid Aws Access Key'
-        Chore::CLI.register_option 'aws_secret_key', '--aws-secret-key KEY', 'Valid Aws Secret Key'
         Chore::CLI.register_option 'dedupe_servers', '--dedupe-servers SERVERS', 'List of mememcache compatible server(s) to use for storing SQS Message Dedupe cache'
         Chore::CLI.register_option 'queue_polling_size', '--queue_polling_size NUM', Integer, 'Amount of messages to grab on each request' do |arg|
           raise ArgumentError, "Cannot specify a queue polling size greater than 10" if arg > 10
@@ -51,13 +49,20 @@ module Chore
         # Deletes the given message from SQS by +id+
         def complete(id)
           Chore.logger.debug "Completing (deleting): #{id}"
-          queue.batch_delete([id])
+          sqs.delete_message(
+            queue_url: queue_url,
+            receipt_handle: id
+          )
         end
 
         def delay(item, backoff_calc)
           delay = backoff_calc.call(item)
           Chore.logger.debug "Delaying #{item.id} by #{delay} seconds"
-          queue.batch_change_visibility(delay, [item.id])
+          sqs.change_visibility(
+            queue_url: queue_url,
+            receipt_handle: item.id,
+            visibility_timeout: delay
+          )
 
           return delay
         end
@@ -67,20 +72,23 @@ module Chore
         # Requests messages from SQS, and invokes the provided +&block+ over each one. Afterwards, the :on_fetch
         # hook will be invoked, per message
         def handle_messages(&block)
-          msg = queue.receive_messages(:limit => sqs_polling_amount, :attributes => [:receive_count])
-          messages = *msg
+          msg = sqs.receive_message(
+              queue_url: queue_url,
+              max_number_of_messages: sqs_polling_amount,
+              attribute_names: ['ApproximateReceiveCount', 'QueueArn', 'VisibilityTimeout'])
+          messages = *msg.messages
           messages.each do |message|
             unless duplicate_message?(message)
-              block.call(message.handle, queue_name, queue_timeout, message.body, message.receive_count - 1)
+              block.call(message.receipt_handle, queue_name, message.attributes['VisibilityTimeout'], message.body, message.attributes['ApproximateReceiveCount'].to_i - 1)
             end
-            Chore.run_hooks_for(:on_fetch, message.handle, message.body)
+            Chore.run_hooks_for(:on_fetch, message.receipt_handle, message.body)
           end
           messages
         end
 
         # Checks if the given message has already been received within the timeout window for this queue
         def duplicate_message?(message)
-          dupe_detector.found_duplicate?(:id=>message.id, :queue=>message.queue.url, :visibility_timeout=>message.queue.visibility_timeout)
+          dupe_detector.found_duplicate?(id: message.message_id, queue: message.attributes['QueueArn'], visibility_timeout: message.attributes['VisibilityTimeout'])
         end
 
         # Returns the instance of the DuplicateDetector used to ensure unique messages.
@@ -90,35 +98,22 @@ module Chore
                                             :dupe_on_cache_failure => Chore.config.dupe_on_cache_failure})
         end
 
-        # Retrieves the SQS queue with the given +name+. The method will cache the results to prevent round trips on
-        # subsequent calls. If <tt>reset_connection!</tt> has been called, this will result in the connection being
-        # re-initialized, as well as clear any cached results from prior calls
-        def queue
+        def queue_url
+          @queue_url ||= sqs.get_queue_url(queue_name: queue_name).queue_url
+        end
+
+        # Access to the configured SQS connection object
+        def sqs
           if !@sqs_last_connected || (@@reset_at && @@reset_at >= @sqs_last_connected)
             Seahorse::Client::NetHttp::ConnectionPool.pools.each do |p|
               p.empty!
             end
             @sqs = nil
             @sqs_last_connected = Time.now
-            @queue = nil
+            @queue_url = nil
           end
-          @queue_url ||= sqs.queues.url_for(@queue_name)
-          @queue ||= sqs.queues[@queue_url]
-        end
 
-        # The visibility timeout of the queue for this consumer
-        def queue_timeout
-          @queue_timeout ||= queue.visibility_timeout
-        end
-
-        # Access to the configured SQS connection object
-        def sqs
-          sqs_options = {
-            :access_key_id => Chore.config.aws_access_key,
-            :secret_access_key => Chore.config.aws_secret_key
-          }
-          sqs_options.merge!(:logger => Chore.logger, :log_level => :info) if Chore.config.log_level == Logger::DEBUG
-          @sqs ||= Aws::SQS.new(sqs_options)
+          @sqs ||= Aws::SQS::Client.new(logger: Chore.logger, log_level: :debug)
         end
 
         def sqs_polling_amount
