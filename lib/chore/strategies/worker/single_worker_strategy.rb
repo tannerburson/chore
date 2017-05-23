@@ -10,7 +10,10 @@ module Chore
       def initialize(manager, opts={})
         @options = opts
         @manager = manager
+        @stopped = false
         @worker = nil
+        @queue = Queue.new
+        @queue << :worker
       end
 
       # Starts the <tt>SingleWorkerStrategy</tt>. Currently a noop
@@ -18,22 +21,52 @@ module Chore
 
       # Stops the <tt>SingleWorkerStrategy</tt> if there is a worker to stop
       def stop!
+        return if @stopped
+
+        @stopped = true
+        Chore.logger.info { "Manager #{Process.pid} stopping" }
+
         worker.stop! if worker
       end
 
-      # Assigns work if there isn't already a worker in progress. Otherwise, is a noop
+      # Assigns work if there isn't already a worker in progress. In this, the
+      # single worker strategy, this should never be called if the worker is in
+      # progress.
       def assign(work)
-        if workers_available?
-          @worker = Worker.new(work, @options)
+        return unless acquire_worker
+
+        begin
+          @worker = worker_klass.new(work, @options)
           @worker.start
-          @worker = nil
           true
+        ensure
+          release_worker
         end
       end
 
-      # Returns true if there is currently no worker
-      def workers_available?
-        @worker.nil?
+      def worker_klass
+        Worker
+      end
+
+      private
+
+      # Attempts to essentially acquire a lock on a worker.  If no workers are
+      # available, then this will block until one is.
+      def acquire_worker
+        result = @queue.pop
+
+        if @stopped
+          # Strategy has stopped since the worker was acquired
+          release_worker
+          nil
+        else
+          result
+        end
+      end
+
+      # Releases the lock on a worker so that another thread can pick it up.
+      def release_worker
+        @queue << :worker
       end
     end
   end

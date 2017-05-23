@@ -26,17 +26,17 @@ class FakePublisher < Chore::Publisher
   end
 end
 
-TestMessage = Struct.new(:handle, :queue, :body, :receive_count) do
+TestMessage = Struct.new(:receipt_handle, :body) do
   def empty?
     false
   end
 
-  def queue_name
-    self.queue.name
+  def attributes
+    {'VisibilityTimeout' =>  10, 'ApproximateReceiveCount' => 1}
   end
 
-  def id
-    self.handle
+  def message_id
+    self.receipt_handle
   end
 
   # Structs define a to_a behavior that is not compatible with array splatting. Remove it so that
@@ -65,3 +65,5 @@ RSpec.configure do |config|
     FakePublisher.reset!
   end
 end
+
+RSpec::Expectations.configuration.warn_about_potential_false_positives = false

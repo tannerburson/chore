@@ -3,21 +3,22 @@ require 'chore/publisher'
 module Chore
   module Queues
     module SQS
-      
+
       # SQS Publisher, for writing messages to SQS from Chore
       class Publisher < Chore::Publisher
         @@reset_next = true
 
         def initialize(opts={})
           super
-          @sqs_queues = {}
           @sqs_queue_urls = {}
         end
 
         # Takes a given Chore::Job instance +job+, and publishes it by looking up the +queue_name+.
         def publish(queue_name,job)
-          queue = self.queue(queue_name)
-          queue.send_message(encode_job(job))
+          sqs.send_message(
+            queue_url: url_for(queue_name),
+            message_body: encode_job(job)
+          )
         end
 
         # Sets a flag that instructs the publisher to reset the connection the next time it's used
@@ -27,27 +28,20 @@ module Chore
 
         # Access to the configured SQS connection object
         def sqs
-          @sqs ||= AWS::SQS.new(
-            :access_key_id => Chore.config.aws_access_key,
-            :secret_access_key => Chore.config.aws_secret_key,
-            :logger => Chore.logger,
-            :log_level => :debug)
-        end
-
-        # Retrieves the SQS queue with the given +name+. The method will cache the results to prevent round trips on subsequent calls
-        # If <tt>reset_connection!</tt> has been called, this will result in the connection being re-initialized,
-        # as well as clear any cached results from prior calls
-        def queue(name)
          if @@reset_next
-            AWS::Core::Http::ConnectionPool.pools.each do |p|
+            Seahorse::Client::NetHttp::ConnectionPool.pools.each do |p|
               p.empty!
             end
             @sqs = nil
             @@reset_next = false
-            @sqs_queues = {}
+            @sqs_queue_urls = {}
           end
-          @sqs_queue_urls[name] ||= self.sqs.queues.url_for(name)
-          @sqs_queues[name] ||= self.sqs.queues[@sqs_queue_urls[name]]
+          @sqs ||= Aws::SQS::Client.new
+        end
+
+        private
+        def url_for(name)
+          @sqs_queue_urls[name] ||= sqs.get_queue_url(queue_name: name).queue_url
         end
       end
     end

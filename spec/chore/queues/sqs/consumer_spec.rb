@@ -3,36 +3,31 @@ require 'spec_helper'
 describe Chore::Queues::SQS::Consumer do
   let(:queue_name) { "test" }
   let(:queue_url) { "test_url" }
-  let(:queues) { double("queues") }
   let(:queue) { double("test_queue", :visibility_timeout=>10, :url=>"test_queue", :name=>"test_queue") }
   let(:options) { {} }
   let(:consumer) { Chore::Queues::SQS::Consumer.new(queue_name) }
-  let(:message) { TestMessage.new("handle",queue, "message body", 1) }
-  let(:message_data) {{:id=>message.id, :queue=>message.queue.url, :visibility_timeout=>message.queue.visibility_timeout}}
+  let(:message) { double("message list", :messages => [TestMessage.new("handle", "message body")]) }
+  let(:message_data) {{:id=>message.messages[0].message_id, :queue=>queue_url, :visibility_timeout=>message.messages[0].attributes['VisibilityTimeout']}}
   let(:pool) { double("pool") }
-  let(:sqs) { double('AWS::SQS') }
+  let(:sqs) { double('Aws::SQS::Client', :get_queue_url => double(:dumb, :queue_url => queue_url), :receive_message => message) }
   let(:backoff_func) { nil }
 
   before do
-    allow(AWS::SQS).to receive(:new).and_return(sqs)
-    allow(sqs).to receive(:queues) { queues }
-
-    allow(queues).to receive(:url_for) { queue_url }
-    allow(queues).to receive(:[]) { queue }
-    allow(queue).to receive(:receive_message) { message }
+    allow(Aws::SQS::Client).to receive(:new).and_return(sqs)
     allow(pool).to receive(:empty!) { nil }
   end
 
   describe "consuming messages" do
     let!(:consumer_run_for_one_message) { allow(consumer).to receive(:running?).and_return(true, false) }
     let!(:messages_be_unique) { allow_any_instance_of(Chore::DuplicateDetector).to receive(:found_duplicate?).and_return(false) }
-    let!(:queue_contain_messages) { allow(queue).to receive(:receive_messages).and_return(message) }
+    let!(:queue_contain_messages) { allow(sqs).to receive(:receive_message).and_return(message) }
 
-    it 'should configure sqs' do
+    # Should probably rely purely on external configuration
+    xit 'should configure sqs' do
       allow(Chore.config).to receive(:aws_access_key).and_return('key')
       allow(Chore.config).to receive(:aws_secret_key).and_return('secret')
 
-      expect(AWS::SQS).to receive(:new).with(
+      expect(Aws::SQS::Client).to receive(:new).with(
         :access_key_id => 'key',
         :secret_access_key => 'secret'
       ).and_return(sqs)
@@ -42,30 +37,20 @@ describe Chore::Queues::SQS::Consumer do
     it 'should not configure sqs multiple times' do
       allow(consumer).to receive(:running?).and_return(true, true, false)
 
-      expect(AWS::SQS).to receive(:new).once.and_return(sqs)
-      consumer.consume
-    end
-
-    it 'should look up the queue url based on the queue name' do
-      expect(queues).to receive(:url_for).with('test').and_return(queue_url)
-      consumer.consume
-    end
-
-    it 'should look up the queue based on the queue url' do
-      expect(queues).to receive(:[]).with(queue_url).and_return(queue)
+      expect(Aws::SQS::Client).to receive(:new).once.and_return(sqs)
       consumer.consume
     end
 
     context "should receive a message from the queue" do
 
       it 'should use the default size of 10 when no queue_polling_size is specified' do
-        expect(queue).to receive(:receive_messages).with(:limit => 10, :attributes => [:receive_count])
+        expect(sqs).to receive(:receive_message).with(queue_url: queue_url, max_number_of_messages: 10, attribute_names: anything())
         consumer.consume
       end
 
       it 'should respect the queue_polling_size when specified' do
         allow(Chore.config).to receive(:queue_polling_size).and_return(5)
-        expect(queue).to receive(:receive_messages).with(:limit => 5, :attributes => [:receive_count])
+        expect(sqs).to receive(:receive_message).with(queue_url: queue_url, max_number_of_messages: 5, attribute_names: anything())
         consumer.consume
       end
     end
@@ -76,17 +61,18 @@ describe Chore::Queues::SQS::Consumer do
     end
 
     it "should yield the message to the handler block" do
+      allow_any_instance_of(Chore::DuplicateDetector).to receive(:found_duplicate?).and_return(false)
       expect { |b| consumer.consume(&b) }.to yield_with_args('handle', queue_name, 10, 'message body', 0)
     end
 
     it 'should not yield for a dupe message' do
-      allow_any_instance_of(Chore::DuplicateDetector).to receive(:found_duplicate?).with(message_data).and_return(true)
+      allow_any_instance_of(Chore::DuplicateDetector).to receive(:found_duplicate?).and_return(true)
       expect {|b| consumer.consume(&b) }.not_to yield_control
     end
 
     context 'with no messages' do
       let!(:consumer_run_for_one_message) { allow(consumer).to receive(:running?).and_return(true, true, false) }
-      let!(:queue_contain_messages) { allow(queue).to receive(:receive_messages).and_return(message, nil) }
+      let!(:queue_contain_messages) { allow(sqs).to receive(:receive_message).and_return(message, double(:resp,messages:[])) }
 
       it 'should sleep' do
         expect(consumer).to receive(:sleep).with(1)
@@ -96,7 +82,7 @@ describe Chore::Queues::SQS::Consumer do
 
     context 'with messages' do
       let!(:consumer_run_for_one_message) { allow(consumer).to receive(:running?).and_return(true, true, false) }
-      let!(:queue_contain_messages) { allow(queue).to receive(:receive_messages).and_return(message, message) }
+      let!(:queue_contain_messages) { allow(sqs).to receive(:receive_message).and_return(message, message) }
 
       it 'should not sleep' do
         expect(consumer).to_not receive(:sleep)
@@ -106,37 +92,36 @@ describe Chore::Queues::SQS::Consumer do
   end
 
   describe '#delay' do
-    let(:item) { Chore::UnitOfWork.new(message.id, message.queue, 60, message.body, 0, consumer) }
+    let(:item) { Chore::UnitOfWork.new(message.messages[0].message_id, queue_url, 60, message.messages[0].body, 0, consumer) }
     let(:backoff_func) { lambda { |item| 2 } }
 
     it 'changes the visiblity of the message' do
-      expect(queue).to receive(:batch_change_visibility).with(2, [item.id])
+      expect(sqs).to receive(:change_visibility).with(queue_url: queue_url, receipt_handle: item.id,visibility_timeout: 2)
       consumer.delay(item, backoff_func)
     end
   end
 
   describe '#reset_connection!' do
     it 'should reset the connection after a call to reset_connection!' do
-      expect(AWS::Core::Http::ConnectionPool).to receive(:pools).and_return([pool])
+      expect(Seahorse::Client::NetHttp::ConnectionPool).to receive(:pools).and_return([pool])
       expect(pool).to receive(:empty!)
       Chore::Queues::SQS::Consumer.reset_connection!
-      consumer.send(:queue)
+      consumer.send(:sqs)
     end
 
     it 'should not reset the connection between calls' do
-      sqs = consumer.send(:queue)
-      expect(sqs).to be consumer.send(:queue)
+      sqs = consumer.send(:sqs)
+      expect(sqs).to be consumer.send(:sqs)
     end
 
     it 'should reconfigure sqs' do
       allow(consumer).to receive(:running?).and_return(true, false)
       allow_any_instance_of(Chore::DuplicateDetector).to receive(:found_duplicate?).and_return(false)
 
-      allow(queue).to receive(:receive_messages).and_return(message)
+      allow(sqs).to receive(:receive_message).and_return(message)
       consumer.consume
 
       Chore::Queues::SQS::Consumer.reset_connection!
-      allow(AWS::SQS).to receive(:new).and_return(sqs)
 
       expect(consumer).to receive(:running?).and_return(true, false)
       consumer.consume
@@ -144,23 +129,23 @@ describe Chore::Queues::SQS::Consumer do
   end
 
   describe 'aws logging' do
-    it 'should not set AWS logging if Chore log level is info' do
+    it 'should not set Aws logging if Chore log level is info' do
       allow(Chore.config).to receive(:log_level).and_return(Logger::INFO)
 
       allow(consumer).to receive(:running?).and_return(true, false)
-      allow(queue).to receive(:receive_messages).and_return(message)
+      allow(sqs).to receive(:receive_message).and_return(message)
 
-      expect(AWS::SQS).to receive(:new).with(hash_not_including(:logger => Chore.logger, :log_level => :debug))
+      expect(Aws::SQS::Client).to receive(:new).with(hash_not_including(:log_level => :info))
       consumer.consume
     end
 
-    it 'should set the AWS logging if Chore log level is debug' do
+    it 'should set the Aws logging if Chore log level is debug' do
       allow(Chore.config).to receive(:log_level).and_return(Logger::DEBUG)
 
       allow(consumer).to receive(:running?).and_return(true, false)
-      allow(queue).to receive(:receive_messages).and_return(message)
+      allow(sqs).to receive(:receive_message).and_return(message)
 
-      expect(AWS::SQS).to receive(:new).with(hash_including(:logger => Chore.logger, :log_level => :debug))
+      expect(Aws::SQS::Client).to receive(:new).with(hash_including(:logger => Chore.logger, :log_level => :debug))
       consumer.consume
     end
   end

@@ -16,6 +16,9 @@ module Chore
         # use of mutex and file locking should make this both threadsafe and safe for multiple
         # processes to use the same queue directory simultaneously. 
         def publish(queue_name,job)
+          # First try encoding the job to avoid writing empty job files if this fails
+          encoded_job = encode_job(job)
+
           FILE_MUTEX.synchronize do
             while true
               # keep trying to get a file with nothing in it meaning we just created it
@@ -23,11 +26,11 @@ module Chore
               f = File.open(filename(queue_name, job[:class].to_s), "w")
               if f.flock(File::LOCK_EX | File::LOCK_NB) && f.size == 0
                 begin
-                  f.write(job.to_json)
+                  f.write(encoded_job)
                 ensure
                   f.flock(File::LOCK_UN)
-                  break
                 end
+                break
               end
             end
           end

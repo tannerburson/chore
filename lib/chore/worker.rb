@@ -56,6 +56,8 @@ module Chore
       @work.each do |item|
         return if @stopping
         begin
+          item.decoded_message = options[:payload_handler].decode(item.message)
+          item.klass = options[:payload_handler].payload_class(item.decoded_message)
           start_item(item)
         rescue => e
           Chore.logger.error { "Failed to run job for #{item.message} with error: #{e.message} #{e.backtrace * "\n"}" }
@@ -64,6 +66,7 @@ module Chore
             item.consumer.complete(item.id)
           else
             Chore.run_hooks_for(:on_failure,item.message,e)
+            item.consumer.reject(item.id)
           end
         end
       end
@@ -76,9 +79,9 @@ module Chore
 
   private
     def start_item(item)
-      message = options[:payload_handler].decode(item.message)
-      klass = options[:payload_handler].payload_class(message)
-      return unless klass.run_hooks_for(:before_perform,message)
+      klass = item.klass
+      message = item.decoded_message
+      return unless klass.run_hooks_for(:before_perform, message)
 
       begin
         Chore.logger.info { "Running job #{klass} with params #{message}"}
@@ -114,6 +117,7 @@ module Chore
         item.consumer.complete(item.id)
       else
         klass.run_hooks_for(:on_failure, message, e)
+        item.consumer.reject(item.id)
       end
     end
 

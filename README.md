@@ -33,6 +33,7 @@ Other options include:
     --threads-per-queue 4 # number of threads per queue for consuming from a given queue.
     --dedupe-servers # if using SQS or similiar queue with at-least once delivery and your memcache is running on something other than localhost
     --batch-size 50 # how many messages are batched together before handing them to a worker
+    --batch-timeout 20 # maximum number of seconds to wait until handing a message over to a worker
     --queue_prefix prefixy # A prefix to prepend to queue names, mainly for development and qa testing purposes
     --max-attempts 100 # The maximum number of times a job can be attempted
     --dupe-on-cache-failure # Determines the deduping behavior when a cache connection error occurs. When set to `false`, the message is assumed not to be a duplicate. Defaults to `false`.
@@ -52,17 +53,38 @@ Note that you can use one or the other but not both. Chore will quit and make fu
 
 ### Tips for configuring Chore
 
+For Rails, it can be necessary to add the directory you store your jobs in to the eager loading path,
+found in application.rb. You likely need a similar approach for most apps using jobs, unless you places
+them into a directory that is already eager loaded by default. One example of this might be:
+
+```ruby
+config.eager_load_paths += File.join(config.root, "app", "jobs")
+```
+
+However, due to the way eager_load_paths works in Rails, this may only solve the issue
+in your production environment. You might also find it useful for other environments
+to throw soemthing like this in an config/initializers/chore.rb file, although you
+can choose to load the job files in any way you like:
+
+```ruby
+Dir["#{Rails.root}/app/jobs/**/*"].each do |file|
+  require file unless File.directory?(file)
+end unless Rails.env.production?
+```
+
+### Producing and Consuming Jobs
+
 When it comes to configuring Chore, you have 2 main use cases - as a producer of messages, or as a consumer of messages (the consumer is also able to produce messages if need be, but is running as it's own isolated instance of your application).
 
 For producers, you must do all of your Chore configuration in an intializer.
 
-For consumers, you need to either Chorefile or Chorefile + an initializer.
+For consumers, you need to either use a Chorefile or Chorefile + an initializer.
 
 Because you are likely to use the same app as the basis for both producing and consuming messages, you'll already have a considerable amount of configuration in your Producer - it makes sense to use Chorefile to simply provide the `require` option, and stick to the initializer for the rest of the configuration to keep things DRY.
 
 However, like many aspects of Chore, it is ultimately up to the developer to decide which use case fits their needs best. Chore is happy to let you configure it in almost any way you want.
 
-An example of how to configure chore via and initializer:
+An example of how to configure chore via an initializer:
 
 ```ruby
 Chore.configure do |c|
@@ -71,6 +93,7 @@ Chore.configure do |c|
   c.max_attempts = 100
   ...
   c.batch_size = 50
+  c.batch_timeout = 20
 end
 ```
 
@@ -84,7 +107,7 @@ If your queues do not exist, you must create them before you run the application
 
 ```ruby
 require 'aws-sdk'
-sqs = AWS::SQS.new
+sqs = Aws::SQS.new
 sqs.queues.create("test_queue")
 ```
 
@@ -168,11 +191,13 @@ A number of hooks, both global and per-job, exist in Chore for your convenience.
 
 Global Hooks:
 
+* before_start
 * before_first_fork
 * before_fork
 * after_fork
 * around_fork
 * within_fork
+* before_shutdown
 
 ("within_fork" behaves similarly to around_fork, except that it is called after the worker process has been forked. In contrast, around_fork is called by the parent process.)
 
@@ -204,7 +229,11 @@ class TestJob
   queue_options :name => 'test_queue'
 
   def perform(args={})
-    Chore.logger.debug "My first sync job"
+    # Do something cool
+  end
+
+  def before_perform_log(message)
+    Chore.logger.debug "About to do something cool with: #{message.inspect}"
   end
 end
 ```
@@ -277,7 +306,73 @@ Chore has several plugin gems available, which extend it's core functionality
 
 [Airbrake](https://github.com/Tapjoy/chore-airbrake) - Integrating Chore with Airbrake
 
+## Managing Chore processes
+
+### Sample Upstart
+
+There are lots of ways to create upstart scripts, so it's difficult to give a prescriptive
+example of the "right" way to do it. However, here are some ideas from how we run it in production
+at Tapjoy:
+
+You should have a specific user that the process runs under, for security reasons. Swap to
+this user at the beginning of your exec line
+
+```bash
+su - $USER --command '...'
+```
+
+For the command to run Chore itself keeping all of the necessary environment variables in an env
+file that your upstart can source on it's exec line, to prevent having to mix changing environment
+variables with having to change the upstart script itself
+
+```bash
+source $PATHTOENVVARS ;
+```
+
+After that, you'll want to make sure you're running Chore under the right ruby version. Additionally,
+we like to redirect STDOUT and STDERR to logger, with an app name. This makes it easy to find
+information in syslog later on. Putting that all together looks like:
+
+```bash
+rvm use $RUBYVERSION do  bundle exec chore -c Chorefile  2>&1 | logger -t $APPNAME
+```
+
+There are many other ways you could manage the Upstart file, but these are a few of the ways we
+prefer to do it. Putting it all together, it looks something like:
+
+```bash
+exec su - special_user --command 'source /the/path/to/env ; rvm use ruby-1.9.3-p484 do bundle exec chore -c Chorefile 2>&1 | logger chore-app'
+```
+
+### Locating Processes
+
+As Chore does not keep a PIDfile, and has both a master and a potential number of workers,
+you may find it difficult to isolate the exact PID for the master process.
+
+To find Chore master processes via ```ps```, you can run the following:
+
+```bash
+ps aux | grep bin/chore
+```
+
+or
+
+```bash
+pgrep -f bin/chore
+```
+
+To find a list of only Chore worker processes:
+
+```bash
+ps aux | grep chore-
+```
+
+or
+
+```bash
+pgrep -f chore-
+```
 ## Copyright
 
-Copyright (c) 2013 - 2014 Tapjoy. See LICENSE.txt for
+Copyright (c) 2013 - 2015 Tapjoy. See LICENSE.txt for
 further details.
