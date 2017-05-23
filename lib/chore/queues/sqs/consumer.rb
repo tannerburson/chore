@@ -72,11 +72,11 @@ module Chore
         # Requests messages from SQS, and invokes the provided +&block+ over each one. Afterwards, the :on_fetch
         # hook will be invoked, per message
         def handle_messages(&block)
-          msg = sqs.receive_message(
+          resp = sqs.receive_message(
               queue_url: queue_url,
               max_number_of_messages: sqs_polling_amount,
               attribute_names: ['ApproximateReceiveCount', 'QueueArn', 'VisibilityTimeout'])
-          messages = *msg.messages
+          messages = resp.messages
           messages.each do |message|
             unless duplicate_message?(message)
               block.call(message.receipt_handle, queue_name, message.attributes['VisibilityTimeout'], message.body, message.attributes['ApproximateReceiveCount'].to_i - 1)
